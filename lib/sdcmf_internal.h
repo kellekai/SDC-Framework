@@ -8,6 +8,8 @@
 */
 
 #include <openssl/md5.h> /* -lcrypt */
+#include <stdlib.h>
+#include <stdio.h>
 
 #define SDCMF_DEFAULT_FACTOR	(10)
 #define SDCMF_NUM_ORGP		(16)
@@ -29,5 +31,27 @@ typedef struct sdcmf_data {
   sdcmf_orgp_t 	*orgp;
 } sdcmf_data_t;
 
+#define ABRT	\
+  do {fprintf( stderr, "%s %s():%d\n", __FILE__, __func__, __LINE__ ); \
+    exit(9);} while(0)
+
+//#define VERBOSE
+#ifndef VERBOSE
+#define CHK(X,Y)							\
+  do { if((X)) sdcmf_fail(Y); else sdcmf_success(Y); } while(0)
+#else
+#define CHK(X,Y)							\
+  do {if((X)) {fprintf(stderr,"%s %s():%d [%s] FAILED !!!!\n", 		\
+		       __FILE__,__func__,__LINE__,#X);sdcmf_fail(Y);}	\
+    else {fprintf(stderr,"%s %s():%d [%s] succeeded\n",			\
+		  __FILE__,__func__,__LINE__,#X);sdcmf_success(Y);}} while(0)
+#endif
+
+/* sdcmf_hash.c */
 void sdcmf_hash_create( sdcmf_data_t *buff );
-void sdcmf_hash_check( sdcmf_data_t *buff );
+int  sdcmf_hash_check( sdcmf_data_t *buff );
+
+/* sdcmf_message.c */
+void sdcmf_start_message( void );
+void sdcmf_success( char* );
+void sdcmf_fail( char* );

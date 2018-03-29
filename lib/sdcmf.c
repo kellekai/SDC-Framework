@@ -19,12 +19,11 @@ static struct sdcmf_data	sdcmf_input;
 static struct sdcmf_data	sdcmf_output;
 
 static int 	sdcmf_iteration = 0;
-static int	sdcmf_factor    = SDCMF_DEFAULT_FACTOR;
-static double	sdcmf_first;
+static int	sdcmf_sleep;
 static double	sdcmf_start;
-static double	sdcmf_sleep;
-static double	sdcmf_accum_sleep;
-static double	sdcmf_accum_elapsed;
+
+double	sdcmf_accum_sleep;
+double	sdcmf_accum_elapsed;
 
 static double get_time( void ) {
   struct timeval tv;
@@ -33,18 +32,15 @@ static double get_time( void ) {
 }
 
 static void sdcmf_copyin_data( void *data, size_t size, sdcmf_data_t *buff ) {
-  if( buff->size - buff->currp > size ) {
-    if( ( buff->data = realloc( buff->data, size ) ) == NULL ) {
-      /* ENOMEM */
-    }
-    buff->size += size;
+  if( buff->size - buff->currp < size ) {
+    buff->size += ( size < 1024 ) ? 1024 : size;
+    buff->data = realloc( buff->data, buff->size );
+    if( buff->data == NULL ) ABRT;
   }
-  if( buff->orgp_n - buff->orgp_c == 0 ) {
+  if( buff->orgp_n == buff->orgp_c ) {
     buff->orgp_n += SDCMF_NUM_ORGP;
     buff->orgp = realloc( buff->orgp, buff->orgp_n * sizeof(sdcmf_orgp_t) );
-    if( buff->orgp == NULL ) {
-      /* ENOMEM */
-    }
+    if( buff->orgp == NULL ) ABRT;
   }
   memcpy( buff->data + buff->currp, data, size );
   buff->currp += size;
@@ -54,86 +50,110 @@ static void sdcmf_copyin_data( void *data, size_t size, sdcmf_data_t *buff ) {
   buff->orgp_c ++;
 }
 
-static void sdcmf_copyout_data( sdcmf_data_t *buff, void *data, size_t size ) {
-  memcpy( data,  buff->data + buff->currp, size );
-  buff->currp += size;
-}
-
 static int sdcmf_check_data( sdcmf_data_t *buff ) {
   int i, j;
+
   for( i=0,j=0; i<buff->orgp_c; i++ ) {
-    if( memcmp( &buff->data[j],
-		buff->orgp[i].p,
-		buff->orgp[i].sz ) != 0 ) {
-      /* error */
+    if( memcmp( &buff->data[j], buff->orgp[i].p, buff->orgp[i].sz ) != 0 ) {
+      return -1;
     }
     j += buff->orgp[i].sz;
   }
+  return 0;
 }
 
 static void sdcmf_sleep_time( void ) {
-  char *opt;
+  static int	factor = 0;
+  char		*opt;
+
   if( ( opt = getenv( "SDCMF_RATIO" ) ) != NULL ) {
-    sdcmf_factor = atoi( opt );
-    if( sdcmf_factor == 0 ) sdcmf_factor = SDCMF_DEFAULT_FACTOR;
+    factor = atoi( opt );
+  }
+  if( factor == 0 ) factor = SDCMF_DEFAULT_FACTOR;
+  sdcmf_sleep = ((int)( get_time() - sdcmf_start )) * factor;
+  if( sdcmf_sleep < 1 ) sdcmf_sleep = 10;
+#ifdef VERBOSE
+  fprintf( stderr, "SLEEP %d sec\n", sdcmf_sleep );
+#endif
+}
+
+static void sdcmf_init( void ) {
+  static int started = 0;
+  if( !started ) {
+    started = 1;
+    sdcmf_start = get_time();
+    memset( (void*) &sdcmf_input,  0, sizeof(sdcmf_input)  );
+    memset( (void*) &sdcmf_output, 0, sizeof(sdcmf_output) );
+    sdcmf_start_message();
   }
 }
 
 void sdcmf_input_data( void *data, size_t size ) {
+  sdcmf_init();
   if( sdcmf_iteration == 0 ) {
-    if( sdcmf_input.size == 0 ) {
-      sdcmf_start_message();
-      memset( (void*) &sdcmf_input,  0, sizeof(sdcmf_input)  );
-      sdcmf_first = get_time();
-    }
     sdcmf_copyin_data( data, size, &sdcmf_input );
-    sdcmf_sleep_time();
   } else {
-    sdcmf_start = get_time();
-    if( sdcmf_input.currp == 0 ) {
-      sdcmf_hash_check( &sdcmf_input );
-    }
-    sdcmf_copyout_data( &sdcmf_input, data, size );
+    memcpy( data, sdcmf_input.data + sdcmf_input.currp, size );
+    sdcmf_input.currp += size;
+    sdcmf_input.orgp[sdcmf_input.orgp_c].p  = data;
+    sdcmf_input.orgp[sdcmf_input.orgp_c].sz = size;
+    sdcmf_input.orgp_c ++;
   }
 }
 
 void sdcmf_input_end( void ) {
+  sdcmf_init();
   if( sdcmf_iteration == 0 ) {
     sdcmf_hash_create( &sdcmf_input );
   } else {
-
     sleep( sdcmf_sleep );
     sdcmf_accum_sleep += ((double)sdcmf_sleep);
-    sdcmf_hash_check( &sdcmf_input );
-    sdcmf_check_data( &sdcmf_input );
+    sdcmf_accum_elapsed = get_time() - sdcmf_start;
+    CHK( sdcmf_hash_check( &sdcmf_input ), "IH" );
+    CHK( sdcmf_check_data( &sdcmf_input ), "ID" );
   }
-  sdcmf_input.currp = 0;
+  sdcmf_input.currp  = 0;
+  sdcmf_input.orgp_c = 0;
 }
 
 void sdcmf_output_data( void *data, size_t size ) {
+  sdcmf_init();
   if( sdcmf_iteration == 0 ) {
-    if( sdcmf_output.size == 0 ) {
-      memset( (void*) &sdcmf_output, 0, sizeof(sdcmf_output) );
-    }
-    sdcmf_copyin_data( data, size, &sdcmf_input );
+    sdcmf_copyin_data( data, size, &sdcmf_output );
+  } else {
+    sdcmf_output.currp += size;
+    sdcmf_output.orgp[sdcmf_output.orgp_c].p  = data;
+    sdcmf_output.orgp[sdcmf_output.orgp_c].sz = size;
+    sdcmf_output.orgp_c ++;
   }
 }
 
 void sdcmf_output_end( void ) {
+  sdcmf_init();
   if( sdcmf_iteration == 0 ) {
     sdcmf_hash_create( &sdcmf_output );
   } else {
-    sdcmf_hash_check( &sdcmf_output );
-    sdcmf_check_data( &sdcmf_output );
+    sdcmf_accum_elapsed = get_time() - sdcmf_start;
+    CHK( sdcmf_hash_check( &sdcmf_output ), "OH" );
+    CHK( sdcmf_check_data( &sdcmf_output ), "OD" );
   }
-  sdcmf_output.currp = 0;
+  sdcmf_output.currp  = 0;
+  sdcmf_output.orgp_c = 0;
 }
 
 void sdcmf_appcheck( int ok ) {
+  sdcmf_init();
   if( sdcmf_iteration == 0 ) {
-    sdcmf_sleep = ((int)( get_time() - sdcmf_first )) * sdcmf_factor;
+    sdcmf_sleep_time();
   } else {
-    sdcmf_accum_elapsed += get_time() - sdcmf_start;
+#ifdef VERBOSE
+    fprintf( stderr, "ELAPSED %g sec (SLEEP %g sec)\n",
+	     sdcmf_accum_elapsed, sdcmf_accum_sleep );
+#endif
   }
+  sdcmf_accum_elapsed = get_time() - sdcmf_start;
+  CHK( !ok, "AP" );
+  CHK( sdcmf_hash_check( &sdcmf_input ), "IH" );
+  CHK( sdcmf_hash_check( &sdcmf_output ), "OH" );
   sdcmf_iteration ++;
 }
