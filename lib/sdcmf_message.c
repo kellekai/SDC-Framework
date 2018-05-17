@@ -50,6 +50,10 @@ void sdcmf_start_message( void ) {
   open_file();
 }
 
+int sdcmf_errors() {
+    return nerrors;
+}
+
 void sdcmf_success( char *id ) {
   open_file();
   time_stamp();
