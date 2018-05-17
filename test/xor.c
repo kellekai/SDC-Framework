@@ -7,7 +7,7 @@
 #include <time.h>
 #include <openssl/md5.h>
 
-#define N 1024L*256L*100L // 100MB   
+#define N 1024L*1024L*1024L*256L*100L // 100MB   
 #define MEMSIZE (sizeof(uint32_t)*N)
 #define NITER 10
 
@@ -23,7 +23,7 @@ int init() {
     }
     srand(time(NULL));
     
-    int i;
+    long i;
     for(i=0; i<N; ++i) {
         A[i] = rand();
     }
@@ -40,15 +40,15 @@ int init() {
 void mem_stress() {
     // -> MODIFY (i := 0 -> N-1) : A'[i] = A[i] XOR A[i+1]
     // NOTE : A'[N-1] = A[N-1] XOR A'[0] 
-    int i;
+    long i;
     for(i=0; i<N; ++i) {
-        A[i] = A[i]^A[(i+1)%((int)N)];
+        A[i] = A[i]^A[(i+1)%((long)N)];
     }
     
     // -> INVERSE (i := N-1 -> 0) : A[i] = A'[i] XOR A[i+1]
     // NOTE : A[N-1] = A'[N-1] XOR A'[0]
     for(i=0; i<N; ++i) {
-        A[N-1-i] = A[N-1-i]^A[(N-1-i+1)%((int)N)];
+        A[N-1-i] = A[N-1-i]^A[(N-1-i+1)%((long)N)];
     }
 }
 
