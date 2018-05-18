@@ -8,8 +8,8 @@
 #include <openssl/md5.h>
 
 // parameters
-static long long N;
-static long long MEMSIZE;
+static unsigned long N;
+static unsigned long MEMSIZE;
 static int NITER;
 
 uint32_t* A;
@@ -25,7 +25,7 @@ int init() {
 
     srand(time(NULL));
     
-    long i;
+    unsigned long i;
     for(i=0; i<N; ++i) {
         A[i] = rand();
     }
@@ -42,15 +42,15 @@ int init() {
 void mem_stress() {
     // -> MODIFY (i := 0 -> N-1) : A'[i] = A[i] XOR A[i+1]
     // NOTE : A'[N-1] = A[N-1] XOR A'[0] 
-    long i;
+    unsigned long i;
     for(i=0; i<N; ++i) {
-        A[i] = A[i]^A[(i+1)%((long)N)];
+        A[i] = A[i]^A[(i+1)%((unsigned long)N)];
     }
     
     // -> INVERSE (i := N-1 -> 0) : A[i] = A'[i] XOR A[i+1]
     // NOTE : A[N-1] = A'[N-1] XOR A'[0]
     for(i=0; i<N; ++i) {
-        A[N-1-i] = A[N-1-i]^A[(N-1-i+1)%((long)N)];
+        A[N-1-i] = A[N-1-i]^A[(N-1-i+1)%((unsigned long)N)];
     }
 }
 
@@ -67,7 +67,7 @@ int chk() {
     }
 }
 
-int run_xor_test( void* _A, const int _NITER, const unsigned long long _MEMSIZE ) {
+int run_xor_test( const char* _A, const int _NITER, const unsigned long _MEMSIZE ) {
     
     A = (uint32_t*) _A;
     N = _MEMSIZE/sizeof(uint32_t);
